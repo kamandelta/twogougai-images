@@ -241,7 +241,7 @@ disable_send_query: false
 gpu: false
 insecure_tls: false
 ip_report_period: 1800
-report_delay: 4
+report_delay: 1
 server: ${YOUNGHERO_SERVER}
 skip_connection_count: false
 skip_procs_count: false
