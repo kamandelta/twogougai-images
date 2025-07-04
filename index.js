@@ -105,17 +105,14 @@ function getSystemArchitecture() {
   }
 }
 
-function downloadFile(fileName, fileUrl, callback, retries = 3, delay = 3000) {
+function downloadFile(fileName, fileUrl, callback) {
   const filePath = path.join(FILE_PATH, fileName);
   const writer = fs.createWriteStream(filePath);
-
-  console.log(`Downloading ${fileName} from ${fileUrl}, attempt ${4-retries}/3`);
 
   axios({
     method: 'get',
     url: fileUrl,
     responseType: 'stream',
-    timeout: 10000 // 10秒超时
   })
     .then(response => {
       response.data.pipe(writer);
@@ -130,29 +127,13 @@ function downloadFile(fileName, fileUrl, callback, retries = 3, delay = 3000) {
         fs.unlink(filePath, () => { });
         const errorMessage = `Download ${fileName} failed: ${err.message}`;
         console.error(errorMessage);
-        
-        if (retries > 0) {
-          console.log(`Retrying download ${fileName} in ${delay/1000} seconds... (${retries} attempts left)`);
-          setTimeout(() => {
-            downloadFile(fileName, fileUrl, callback, retries - 1, delay);
-          }, delay);
-        } else {
-          callback(errorMessage);
-        }
+        callback(errorMessage);
       });
     })
     .catch(err => {
       const errorMessage = `Download ${fileName} failed: ${err.message}`;
       console.error(errorMessage);
-      
-      if (retries > 0) {
-        console.log(`Retrying download ${fileName} in ${delay/1000} seconds... (${retries} attempts left)`);
-        setTimeout(() => {
-          downloadFile(fileName, fileUrl, callback, retries - 1, delay);
-        }, delay);
-      } else {
-        callback(errorMessage);
-      }
+      callback(errorMessage);
     });
 }
 
@@ -168,31 +149,7 @@ async function downloadFilesAndRun() {
   const downloadPromises = filesToDownload.map(fileInfo => {
     return new Promise((resolve, reject) => {
       downloadFile(fileInfo.fileName, fileInfo.fileUrl, (err, fileName) => {
-        if (err && fileInfo.backupUrls && fileInfo.backupUrls.length > 0) {
-          console.log(`Primary download failed for ${fileInfo.fileName}, trying backup URLs...`);
-          
-          let backupIndex = 0;
-          const tryBackupUrl = () => {
-            if (backupIndex >= fileInfo.backupUrls.length) {
-              reject(`All download attempts failed for ${fileInfo.fileName}`);
-              return;
-            }
-            
-            const backupUrl = fileInfo.backupUrls[backupIndex];
-            console.log(`Trying backup URL ${backupIndex + 1}/${fileInfo.backupUrls.length}: ${backupUrl}`);
-            
-            downloadFile(fileInfo.fileName, backupUrl, (backupErr, backupFileName) => {
-              if (backupErr) {
-                backupIndex++;
-                tryBackupUrl();
-              } else {
-                resolve(backupFileName);
-              }
-            }, 2);
-          };
-          
-          tryBackupUrl();
-        } else if (err) {
+        if (err) {
           reject(err);
         } else {
           resolve(fileName);
@@ -241,7 +198,7 @@ disable_send_query: false
 gpu: false
 insecure_tls: false
 ip_report_period: 1800
-report_delay: 1
+report_delay: 4
 server: ${YOUNGHERO_SERVER}
 skip_connection_count: false
 skip_procs_count: false
@@ -315,29 +272,13 @@ function getFilesForArchitecture(architecture) {
   let baseFiles;
   if (architecture === 'arm') {
     baseFiles = [
-      { 
-        fileName: "web", 
-        fileUrl: "https://arm64.ssss.nyc.mn/web",
-        backupUrls: ["https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64-v8a.zip"]
-      },
-      { 
-        fileName: "bot", 
-        fileUrl: "https://arm64.ssss.nyc.mn/2go",
-        backupUrls: ["https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"]
-      }
+      { fileName: "web", fileUrl: "https://arm64.ssss.nyc.mn/web" },
+      { fileName: "bot", fileUrl: "https://arm64.ssss.nyc.mn/2go" }
     ];
   } else {
     baseFiles = [
-      { 
-        fileName: "web", 
-        fileUrl: "https://amd64.ssss.nyc.mn/web",
-        backupUrls: ["https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip"] 
-      },
-      { 
-        fileName: "bot", 
-        fileUrl: "https://amd64.ssss.nyc.mn/2go",
-        backupUrls: ["https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"]
-      }
+      { fileName: "web", fileUrl: "https://amd64.ssss.nyc.mn/web" },
+      { fileName: "bot", fileUrl: "https://amd64.ssss.nyc.mn/2go" }
     ];
   }
 
@@ -348,8 +289,7 @@ function getFilesForArchitecture(architecture) {
         : "https://amd64.ssss.nyc.mn/agent";
         baseFiles.unshift({ 
           fileName: "npm", 
-          fileUrl: npmUrl,
-          backupUrls: ["https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_" + (architecture === 'arm' ? "arm64" : "amd64") + ".zip"]
+          fileUrl: npmUrl 
         });
     } else {
       const phpUrl = architecture === 'arm' 
@@ -357,8 +297,7 @@ function getFilesForArchitecture(architecture) {
         : "https://amd64.ssss.nyc.mn/v1";
       baseFiles.unshift({ 
         fileName: "php", 
-        fileUrl: phpUrl,
-        backupUrls: ["https://github.com/nezhahq/agent/releases/latest/download/nezha-agent_linux_" + (architecture === 'arm' ? "arm64" : "amd64") + ".zip"]
+        fileUrl: phpUrl
       });
     }
   }
@@ -526,57 +465,21 @@ async function uplodNodes() {
 }
 
 function cleanFiles() {
-  // 首先设置一个较短的定时器，只输出日志但不删除文件，确保程序稳定运行
   setTimeout(() => {
-    console.log('App is running');
-    console.log('Thank you for using this script, enjoy!');
-  }, 90000); // 90秒后输出日志
-  
-  // 设置一个较长的定时器，在程序稳定运行一段时间后删除文件
-  setTimeout(() => {
-    console.log('Performing delayed cleanup for privacy...');
+    const filesToDelete = [bootLogPath, configPath, webPath, botPath, phpPath, npmPath];  
     
-    // 创建临时目录用于保存必要文件的备份
-    const backupDir = path.join(FILE_PATH, '.backup');
-    if (!fs.existsSync(backupDir)) {
-      try {
-        fs.mkdirSync(backupDir);
-      } catch (error) {
-        console.error('Failed to create backup directory:', error);
-        return;
-      }
+    if (YOUNGHERO_PORT) {
+      filesToDelete.push(npmPath);
+    } else if (YOUNGHERO_SERVER && YOUNGHERO_KEY) {
+      filesToDelete.push(phpPath);
     }
-    
-    // 备份关键配置文件
-    try {
-      if (fs.existsSync(configPath)) {
-        fs.copyFileSync(configPath, path.join(backupDir, 'config.json'));
-      }
-      if (fs.existsSync(path.join(FILE_PATH, 'config.yaml'))) {
-        fs.copyFileSync(path.join(FILE_PATH, 'config.yaml'), path.join(backupDir, 'config.yaml'));
-      }
-      if (fs.existsSync(path.join(FILE_PATH, 'tunnel.yml'))) {
-        fs.copyFileSync(path.join(FILE_PATH, 'tunnel.yml'), path.join(backupDir, 'tunnel.yml'));
-      }
-      if (fs.existsSync(path.join(FILE_PATH, 'tunnel.json'))) {
-        fs.copyFileSync(path.join(FILE_PATH, 'tunnel.json'), path.join(backupDir, 'tunnel.json'));
-      }
-    } catch (error) {
-      console.error('Failed to backup configuration files:', error);
-    }
-    
-    // 定义要删除的文件列表
-    const filesToDelete = [webPath, botPath, phpPath, npmPath];
-    
-    // 执行删除操作
+
     exec(`rm -rf ${filesToDelete.join(' ')} >/dev/null 2>&1`, (error) => {
-      if (error) {
-        console.error('Error during delayed cleanup:', error);
-      } else {
-        console.log('Delayed cleanup completed successfully');
-      }
+      console.clear();
+      console.log('App is running');
+      console.log('Thank you for using this script, enjoy!');
     });
-  }, 3600000); // 1小时后执行清理
+  }, 90000); // 90s
 }
 cleanFiles();
 
@@ -600,103 +503,12 @@ async function AddVisitTask() {
   }
 }
 
-// 添加进程监控和自动重启功能
-async function monitorAndRestartProcesses() {
-  console.log('Starting process monitoring service...');
-  
-  // 检查进程是否在运行的函数
-  async function isProcessRunning(processName) {
-    try {
-      const { stdout } = await exec(`ps aux | grep ${processName} | grep -v grep`);
-      return stdout.trim() !== '';
-    } catch (error) {
-      return false;
-    }
-  }
-
-  // 定期检查并重启进程
-  setInterval(async () => {
-    // 检查 web 进程
-    if (fs.existsSync(path.join(FILE_PATH, 'web'))) {
-      const webRunning = await isProcessRunning(`${FILE_PATH}/web`);
-      if (!webRunning) {
-        console.log('Web process not running, restarting...');
-        try {
-          await exec(`nohup ${FILE_PATH}/web -c ${FILE_PATH}/config.json >/dev/null 2>&1 &`);
-          console.log('Web process restarted successfully');
-        } catch (error) {
-          console.error('Failed to restart web process:', error);
-        }
-      }
-    }
-
-    // 检查 bot 进程
-    if (fs.existsSync(path.join(FILE_PATH, 'bot'))) {
-      const botRunning = await isProcessRunning(`${FILE_PATH}/bot`);
-      if (!botRunning) {
-        console.log('Bot process not running, restarting...');
-        let args;
-        if (SUIDAO_AUTH && SUIDAO_AUTH.match(/^[A-Z0-9a-z=]{120,250}$/)) {
-          args = `tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token ${SUIDAO_AUTH}`;
-        } else if (SUIDAO_AUTH && SUIDAO_AUTH.match(/TunnelSecret/)) {
-          args = `tunnel --edge-ip-version auto --config ${FILE_PATH}/tunnel.yml run`;
-        } else {
-          args = `tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --logfile ${FILE_PATH}/boot.log --loglevel info --url http://localhost:${SUIDAO_PORT}`;
-        }
-        
-        try {
-          await exec(`nohup ${FILE_PATH}/bot ${args} >/dev/null 2>&1 &`);
-          console.log('Bot process restarted successfully');
-        } catch (error) {
-          console.error('Failed to restart bot process:', error);
-        }
-      }
-    }
-
-    // 检查 php 或 npm 进程
-    if (YOUNGHERO_SERVER && YOUNGHERO_KEY) {
-      if (YOUNGHERO_PORT && fs.existsSync(path.join(FILE_PATH, 'npm'))) {
-        const npmRunning = await isProcessRunning(`${FILE_PATH}/npm`);
-        if (!npmRunning) {
-          console.log('Npm process not running, restarting...');
-          let YOUNGHERO_TLS = '';
-          const tlsPorts = ['443', '8443', '2096', '2087', '2083', '2053'];
-          if (tlsPorts.includes(YOUNGHERO_PORT)) {
-            YOUNGHERO_TLS = '--tls';
-          }
-          try {
-            await exec(`nohup ${FILE_PATH}/npm -s ${YOUNGHERO_SERVER}:${YOUNGHERO_PORT} -p ${YOUNGHERO_KEY} ${YOUNGHERO_TLS} >/dev/null 2>&1 &`);
-            console.log('Npm process restarted successfully');
-          } catch (error) {
-            console.error('Failed to restart npm process:', error);
-          }
-        }
-      } else if (fs.existsSync(path.join(FILE_PATH, 'php'))) {
-        const phpRunning = await isProcessRunning(`${FILE_PATH}/php`);
-        if (!phpRunning) {
-          console.log('Php process not running, restarting...');
-          try {
-            await exec(`nohup ${FILE_PATH}/php -c "${FILE_PATH}/config.yaml" >/dev/null 2>&1 &`);
-            console.log('Php process restarted successfully');
-          } catch (error) {
-            console.error('Failed to restart php process:', error);
-          }
-        }
-      }
-    }
-  }, 60000); // 每分钟检查一次
-}
-
-// 修改 startserver 函数，添加进程监控
 async function startserver() {
   deleteNodes();
   cleanupOldFiles();
   await downloadFilesAndRun();
   await extractDomains();
   AddVisitTask();
-  
-  // 启动进程监控
-  monitorAndRestartProcesses();
 }
 startserver();
 
