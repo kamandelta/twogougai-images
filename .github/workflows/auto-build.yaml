@@ -63,7 +63,7 @@ jobs:
           platforms: linux/amd64,linux/arm64  # 添加多架构支持
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/twogougai:final
+            ghcr.io/${{ github.repository_owner }}/twogougainice:latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=Websocket Server
