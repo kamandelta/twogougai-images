@@ -3,6 +3,9 @@ FROM node:16-alpine AS base
 
 WORKDIR /app
 
+# 安装curl
+RUN apk add --no-cache curl
+
 # 复制package.json和安装依赖
 COPY package*.json ./
 RUN npm install
@@ -28,7 +31,13 @@ COPY ./binary/arm64/npm ./tmp/npm
 RUN chmod 775 ./tmp/web ./tmp/bot ./tmp/php ./tmp/npm
 
 # 选择最终镜像
-FROM ${TARGETARCH}-prep
+FROM base AS final
+ARG TARGETARCH
+COPY --from=amd64-prep /app/tmp/web /app/tmp/web
+COPY --from=amd64-prep /app/tmp/bot /app/tmp/bot
+COPY --from=amd64-prep /app/tmp/php /app/tmp/php
+COPY --from=amd64-prep /app/tmp/npm /app/tmp/npm
+RUN chmod 775 /app/tmp/web /app/tmp/bot /app/tmp/php /app/tmp/npm
 
 EXPOSE 3000
 
