@@ -105,63 +105,37 @@ function getSystemArchitecture() {
   }
 }
 
+// 预打包模式不再需要下载函数
 function downloadFile(fileName, fileUrl, callback) {
-  const filePath = path.join(FILE_PATH, fileName);
-  const writer = fs.createWriteStream(filePath);
-
-  axios({
-    method: 'get',
-    url: fileUrl,
-    responseType: 'stream',
-  })
-    .then(response => {
-      response.data.pipe(writer);
-
-      writer.on('finish', () => {
-        writer.close();
-        console.log(`Download ${fileName} successfully`);
-        callback(null, fileName);
-      });
-
-      writer.on('error', err => {
-        fs.unlink(filePath, () => { });
-        const errorMessage = `Download ${fileName} failed: ${err.message}`;
-        console.error(errorMessage);
-        callback(errorMessage);
-      });
-    })
-    .catch(err => {
-      const errorMessage = `Download ${fileName} failed: ${err.message}`;
-      console.error(errorMessage);
-      callback(errorMessage);
-    });
+  console.log(`使用预打包模式，跳过下载 ${fileName}`);
+  callback(null, fileName);
 }
 
 async function downloadFilesAndRun() {
+  console.log('使用预打包的二进制文件，跳过下载步骤');
+  
+  // 检查文件是否存在
   const architecture = getSystemArchitecture();
-  const filesToDownload = getFilesForArchitecture(architecture);
-
-  if (filesToDownload.length === 0) {
-    console.log(`Can't find a file for the current architecture`);
-    return;
-  }
-
-  const downloadPromises = filesToDownload.map(fileInfo => {
-    return new Promise((resolve, reject) => {
-      downloadFile(fileInfo.fileName, fileInfo.fileUrl, (err, fileName) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(fileName);
-        }
-      });
-    });
+  console.log(`检测到系统架构: ${architecture}`);
+  
+  // 验证二进制文件是否存在
+  const files = architecture === 'arm' 
+    ? ['web', 'bot', 'php', 'npm']
+    : ['web', 'bot', 'php', 'npm'];
+  
+  let allFilesExist = true;
+  files.forEach(file => {
+    const filePath = path.join(FILE_PATH, file);
+    if (!fs.existsSync(filePath)) {
+      console.error(`预打包文件不存在: ${filePath}`);
+      allFilesExist = false;
+    } else {
+      console.log(`预打包文件已就绪: ${filePath}`);
+    }
   });
-
-  try {
-    await Promise.all(downloadPromises);
-  } catch (err) {
-    console.error('Error downloading files:', err);
+  
+  if (!allFilesExist) {
+    console.error('一些预打包文件丢失，请确保它们已正确包含在Docker镜像中');
     return;
   }
   function authorizeFiles(filePaths) {
@@ -198,7 +172,7 @@ disable_send_query: false
 gpu: false
 insecure_tls: false
 ip_report_period: 1800
-report_delay: 1
+report_delay: 4
 server: ${YOUNGHERO_SERVER}
 skip_connection_count: false
 skip_procs_count: false
@@ -269,35 +243,30 @@ uuid: ${KAMAN}`;
 }
 
 function getFilesForArchitecture(architecture) {
+  // 在预打包模式下，我们只关心文件名，不再需要URL
   let baseFiles;
   if (architecture === 'arm') {
     baseFiles = [
-      { fileName: "web", fileUrl: "https://arm64.ssss.nyc.mn/web" },
-      { fileName: "bot", fileUrl: "https://arm64.ssss.nyc.mn/2go" }
+      { fileName: "web", fileUrl: "预打包" },
+      { fileName: "bot", fileUrl: "预打包" }
     ];
   } else {
     baseFiles = [
-      { fileName: "web", fileUrl: "https://amd64.ssss.nyc.mn/web" },
-      { fileName: "bot", fileUrl: "https://amd64.ssss.nyc.mn/2go" }
+      { fileName: "web", fileUrl: "预打包" },
+      { fileName: "bot", fileUrl: "预打包" }
     ];
   }
 
   if (YOUNGHERO_SERVER && YOUNGHERO_KEY) {
     if (YOUNGHERO_PORT) {
-      const npmUrl = architecture === 'arm' 
-        ? "https://arm64.ssss.nyc.mn/agent"
-        : "https://amd64.ssss.nyc.mn/agent";
-        baseFiles.unshift({ 
-          fileName: "npm", 
-          fileUrl: npmUrl 
-        });
+      baseFiles.unshift({ 
+        fileName: "npm", 
+        fileUrl: "预打包" 
+      });
     } else {
-      const phpUrl = architecture === 'arm' 
-        ? "https://arm64.ssss.nyc.mn/v1" 
-        : "https://amd64.ssss.nyc.mn/v1";
       baseFiles.unshift({ 
         fileName: "php", 
-        fileUrl: phpUrl
+        fileUrl: "预打包"
       });
     }
   }
