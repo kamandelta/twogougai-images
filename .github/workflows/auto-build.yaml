@@ -2,13 +2,13 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
-      - "Dockerfile"
-      - "index.js"
-      - "package.json"
+      - 'Dockerfile'
+      - 'app.js'
+      - 'package.json'
   pull_request:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -32,60 +32,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Create binary directories
-        run: mkdir -p binary/amd64 binary/arm64
-
-      - name: Download binary files
-        run: |
-          # 下载AMD64架构文件
-          curl -L https://amd64.ssss.nyc.mn/web -o binary/amd64/web
-          curl -L https://amd64.ssss.nyc.mn/2go -o binary/amd64/bot
-          curl -L https://amd64.ssss.nyc.mn/v1 -o binary/amd64/php
-          curl -L https://amd64.ssss.nyc.mn/agent -o binary/amd64/npm
-
-          # 下载ARM64架构文件
-          curl -L https://arm64.ssss.nyc.mn/web -o binary/arm64/web
-          curl -L https://arm64.ssss.nyc.mn/2go -o binary/arm64/bot
-          curl -L https://arm64.ssss.nyc.mn/v1 -o binary/arm64/php
-          curl -L https://arm64.ssss.nyc.mn/agent -o binary/arm64/npm
-
-          # 设置执行权限
-          chmod +x binary/amd64/* binary/arm64/*
-
-          # 显示下载的文件
-          ls -la binary/amd64/
-          ls -la binary/arm64/
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64 # 添加多架构支持
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/twogougainice:latest
+            ghcr.io/${{ github.repository_owner }}/twogougai:latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=Websocket Server
             org.opencontainers.image.licenses=MIT
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      # 修复验证Docker镜像内容的步骤
-      - name: Verify Docker image contents
-        run: |
-          # 拉取刚刚构建的镜像
-          docker pull ghcr.io/${{ github.repository_owner }}/twogougainice:latest
-
-          # 创建一个容器并直接导出其文件系统
-          docker create --name test_container ghcr.io/${{ github.repository_owner }}/twogougainice:latest
-
-          # 不使用exec，而是直接从容器复制文件到宿主机
-          echo "检查二进制文件是否存在于镜像中..."
-          docker cp test_container:/app/tmp ./extracted_tmp || echo "无法复制/app/tmp目录，可能不存在"
-
-          # 显示提取出的文件
-          ls -la ./extracted_tmp/ || echo "无法列出提取的文件，可能不存在"
-
-          # 清理临时容器
-          docker rm test_container
