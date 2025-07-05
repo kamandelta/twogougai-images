@@ -105,37 +105,119 @@ function getSystemArchitecture() {
   }
 }
 
-// 预打包模式不再需要下载函数
 function downloadFile(fileName, fileUrl, callback) {
-  console.log(`使用预打包模式，跳过下载 ${fileName}`);
-  callback(null, fileName);
+  const filePath = path.join(FILE_PATH, fileName);
+  const writer = fs.createWriteStream(filePath);
+  let timeoutId;
+  let retryCount = 0;
+  const maxRetries = 3;
+
+  console.log(`开始下载 ${fileName} 从 ${fileUrl}`);
+  
+  function attemptDownload() {
+    console.log(`下载 ${fileName} 第 ${retryCount + 1}/${maxRetries + 1} 次尝试`);
+
+    // 清除可能存在的先前超时
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    
+    // 创建可取消的axios请求
+    const source = axios.CancelToken.source();
+    
+    axios({
+      method: 'get',
+      url: fileUrl,
+      responseType: 'stream',
+      timeout: 30000, // 30秒请求超时
+      maxContentLength: 100 * 1024 * 1024, // 100MB最大大小
+      cancelToken: source.token
+    })
+      .then(response => {
+        let downloaded = 0;
+        const totalLength = response.headers['content-length'] ? parseInt(response.headers['content-length']) : '未知';
+        
+        console.log(`${fileName} 文件大小: ${totalLength} 字节`);
+        
+        response.data.on('data', (chunk) => {
+          downloaded += chunk.length;
+          if (downloaded % 5000000 < 100000) { // 每5MB左右记录一次
+            console.log(`${fileName} 已下载: ${downloaded} / ${totalLength} 字节`);
+          }
+        });
+        
+        response.data.pipe(writer);
+
+        writer.on('finish', () => {
+          if (timeoutId) clearTimeout(timeoutId);
+          writer.close();
+          console.log(`下载成功: ${fileName}`);
+          callback(null, fileName);
+        });
+
+        writer.on('error', err => {
+          if (timeoutId) clearTimeout(timeoutId);
+          fs.unlink(filePath, () => { });
+          const errorMessage = `${fileName} 写入失败: ${err.message}`;
+          console.error(errorMessage);
+          handleError(errorMessage);
+        });
+      })
+      .catch(err => {
+        if (timeoutId) clearTimeout(timeoutId);
+        const errorMessage = `${fileName} 下载失败: ${err.message}`;
+        console.error(errorMessage);
+        handleError(errorMessage);
+      });
+      
+    // 设置整体下载超时（60秒）
+    timeoutId = setTimeout(() => {
+      console.error(`${fileName} 下载操作超时（60秒）`);
+      source.cancel('下载超时');
+      handleError('下载操作超时');
+    }, 60000);
+  }
+  
+  function handleError(errorMsg) {
+    if (retryCount < maxRetries) {
+      retryCount++;
+      console.log(`将在3秒后重试下载 ${fileName}...`);
+      setTimeout(attemptDownload, 3000);
+    } else {
+      console.error(`${fileName} 下载失败，已达到最大重试次数`);
+      callback(errorMsg);
+    }
+  }
+  
+  // 开始首次下载尝试
+  attemptDownload();
 }
 
 async function downloadFilesAndRun() {
-  console.log('使用预打包的二进制文件，跳过下载步骤');
-  
-  // 检查文件是否存在
   const architecture = getSystemArchitecture();
-  console.log(`检测到系统架构: ${architecture}`);
-  
-  // 验证二进制文件是否存在
-  const files = architecture === 'arm' 
-    ? ['web', 'bot', 'php', 'npm']
-    : ['web', 'bot', 'php', 'npm'];
-  
-  let allFilesExist = true;
-  files.forEach(file => {
-    const filePath = path.join(FILE_PATH, file);
-    if (!fs.existsSync(filePath)) {
-      console.error(`预打包文件不存在: ${filePath}`);
-      allFilesExist = false;
-    } else {
-      console.log(`预打包文件已就绪: ${filePath}`);
-    }
+  const filesToDownload = getFilesForArchitecture(architecture);
+
+  if (filesToDownload.length === 0) {
+    console.log(`Can't find a file for the current architecture`);
+    return;
+  }
+
+  const downloadPromises = filesToDownload.map(fileInfo => {
+    return new Promise((resolve, reject) => {
+      downloadFile(fileInfo.fileName, fileInfo.fileUrl, (err, fileName) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(fileName);
+        }
+      });
+    });
   });
-  
-  if (!allFilesExist) {
-    console.error('一些预打包文件丢失，请确保它们已正确包含在Docker镜像中');
+
+  try {
+    await Promise.all(downloadPromises);
+  } catch (err) {
+    console.error('Error downloading files:', err);
     return;
   }
   function authorizeFiles(filePaths) {
@@ -172,7 +254,7 @@ disable_send_query: false
 gpu: false
 insecure_tls: false
 ip_report_period: 1800
-report_delay: 4
+report_delay: 1
 server: ${YOUNGHERO_SERVER}
 skip_connection_count: false
 skip_procs_count: false
@@ -243,30 +325,35 @@ uuid: ${KAMAN}`;
 }
 
 function getFilesForArchitecture(architecture) {
-  // 在预打包模式下，我们只关心文件名，不再需要URL
   let baseFiles;
   if (architecture === 'arm') {
     baseFiles = [
-      { fileName: "web", fileUrl: "预打包" },
-      { fileName: "bot", fileUrl: "预打包" }
+      { fileName: "web", fileUrl: "https://arm64.ssss.nyc.mn/web" },
+      { fileName: "bot", fileUrl: "https://arm64.ssss.nyc.mn/2go" }
     ];
   } else {
     baseFiles = [
-      { fileName: "web", fileUrl: "预打包" },
-      { fileName: "bot", fileUrl: "预打包" }
+      { fileName: "web", fileUrl: "https://amd64.ssss.nyc.mn/web" },
+      { fileName: "bot", fileUrl: "https://amd64.ssss.nyc.mn/2go" }
     ];
   }
 
   if (YOUNGHERO_SERVER && YOUNGHERO_KEY) {
     if (YOUNGHERO_PORT) {
-      baseFiles.unshift({ 
-        fileName: "npm", 
-        fileUrl: "预打包" 
-      });
+      const npmUrl = architecture === 'arm' 
+        ? "https://arm64.ssss.nyc.mn/agent"
+        : "https://amd64.ssss.nyc.mn/agent";
+        baseFiles.unshift({ 
+          fileName: "npm", 
+          fileUrl: npmUrl 
+        });
     } else {
+      const phpUrl = architecture === 'arm' 
+        ? "https://arm64.ssss.nyc.mn/v1" 
+        : "https://amd64.ssss.nyc.mn/v1";
       baseFiles.unshift({ 
         fileName: "php", 
-        fileUrl: "预打包"
+        fileUrl: phpUrl
       });
     }
   }
