@@ -1,5 +1,4 @@
-# 使用多阶段构建
-FROM node:16-alpine AS base
+FROM node:16-alpine
 
 WORKDIR /app
 
@@ -12,32 +11,18 @@ RUN npm install
 
 # 复制源代码
 COPY . .
+
+# 确保tmp目录存在
 RUN mkdir -p ./tmp
 
-# 为amd64架构准备文件
-FROM base AS amd64-prep
+# 复制二进制文件到tmp目录
 COPY ./binary/amd64/web ./tmp/web
 COPY ./binary/amd64/bot ./tmp/bot
 COPY ./binary/amd64/php ./tmp/php
 COPY ./binary/amd64/npm ./tmp/npm
-RUN chmod 775 ./tmp/web ./tmp/bot ./tmp/php ./tmp/npm
 
-# 为arm64架构准备文件
-FROM base AS arm64-prep
-COPY ./binary/arm64/web ./tmp/web
-COPY ./binary/arm64/bot ./tmp/bot
-COPY ./binary/arm64/php ./tmp/php
-COPY ./binary/arm64/npm ./tmp/npm
+# 设置执行权限
 RUN chmod 775 ./tmp/web ./tmp/bot ./tmp/php ./tmp/npm
-
-# 选择最终镜像
-FROM base AS final
-ARG TARGETARCH
-COPY --from=amd64-prep /app/tmp/web /app/tmp/web
-COPY --from=amd64-prep /app/tmp/bot /app/tmp/bot
-COPY --from=amd64-prep /app/tmp/php /app/tmp/php
-COPY --from=amd64-prep /app/tmp/npm /app/tmp/npm
-RUN chmod 775 /app/tmp/web /app/tmp/bot /app/tmp/php /app/tmp/npm
 
 EXPOSE 3000
 
