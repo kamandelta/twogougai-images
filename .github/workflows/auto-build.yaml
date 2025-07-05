@@ -70,3 +70,26 @@ jobs:
             org.opencontainers.image.licenses=MIT
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      
+      # 添加验证Docker镜像内容的步骤
+      - name: Verify Docker image contents
+        run: |
+          # 拉取刚刚构建的镜像
+          docker pull ghcr.io/${{ github.repository_owner }}/twogougainice:latest
+          
+          # 创建临时容器
+          docker create --name test_container ghcr.io/${{ github.repository_owner }}/twogougainice:latest
+          
+          # 检查文件是否存在
+          echo "检查二进制文件是否存在于镜像中..."
+          docker exec test_container ls -la /app/tmp/
+          
+          # 尝试复制文件到本地检查
+          docker cp test_container:/app/tmp/web ./web_check || echo "无法复制web文件，可能不存在"
+          docker cp test_container:/app/tmp/bot ./bot_check || echo "无法复制bot文件，可能不存在"
+          
+          # 查看复制出来的文件
+          ls -la ./web_check ./bot_check || echo "无法列出复制的文件，可能复制失败"
+          
+          # 清理临时容器
+          docker rm test_container
