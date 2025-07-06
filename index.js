@@ -108,89 +108,33 @@ function getSystemArchitecture() {
 function downloadFile(fileName, fileUrl, callback) {
   const filePath = path.join(FILE_PATH, fileName);
   const writer = fs.createWriteStream(filePath);
-  let timeoutId;
-  let retryCount = 0;
-  const maxRetries = 3;
 
-  console.log(`开始下载 ${fileName} 从 ${fileUrl}`);
-  
-  function attemptDownload() {
-    console.log(`下载 ${fileName} 第 ${retryCount + 1}/${maxRetries + 1} 次尝试`);
+  axios({
+    method: 'get',
+    url: fileUrl,
+    responseType: 'stream',
+  })
+    .then(response => {
+      response.data.pipe(writer);
 
-    // 清除可能存在的先前超时
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-    
-    // 创建可取消的axios请求
-    const source = axios.CancelToken.source();
-    
-    axios({
-      method: 'get',
-      url: fileUrl,
-      responseType: 'stream',
-      timeout: 30000, // 30秒请求超时
-      maxContentLength: 100 * 1024 * 1024, // 100MB最大大小
-      cancelToken: source.token
-    })
-      .then(response => {
-        let downloaded = 0;
-        const totalLength = response.headers['content-length'] ? parseInt(response.headers['content-length']) : '未知';
-        
-        console.log(`${fileName} 文件大小: ${totalLength} 字节`);
-        
-        response.data.on('data', (chunk) => {
-          downloaded += chunk.length;
-          if (downloaded % 5000000 < 100000) { // 每5MB左右记录一次
-            console.log(`${fileName} 已下载: ${downloaded} / ${totalLength} 字节`);
-          }
-        });
-        
-        response.data.pipe(writer);
-
-        writer.on('finish', () => {
-          if (timeoutId) clearTimeout(timeoutId);
-          writer.close();
-          console.log(`下载成功: ${fileName}`);
-          callback(null, fileName);
-        });
-
-        writer.on('error', err => {
-          if (timeoutId) clearTimeout(timeoutId);
-          fs.unlink(filePath, () => { });
-          const errorMessage = `${fileName} 写入失败: ${err.message}`;
-          console.error(errorMessage);
-          handleError(errorMessage);
-        });
-      })
-      .catch(err => {
-        if (timeoutId) clearTimeout(timeoutId);
-        const errorMessage = `${fileName} 下载失败: ${err.message}`;
-        console.error(errorMessage);
-        handleError(errorMessage);
+      writer.on('finish', () => {
+        writer.close();
+        console.log(`Download ${fileName} successfully`);
+        callback(null, fileName);
       });
-      
-    // 设置整体下载超时（60秒）
-    timeoutId = setTimeout(() => {
-      console.error(`${fileName} 下载操作超时（60秒）`);
-      source.cancel('下载超时');
-      handleError('下载操作超时');
-    }, 60000);
-  }
-  
-  function handleError(errorMsg) {
-    if (retryCount < maxRetries) {
-      retryCount++;
-      console.log(`将在3秒后重试下载 ${fileName}...`);
-      setTimeout(attemptDownload, 3000);
-    } else {
-      console.error(`${fileName} 下载失败，已达到最大重试次数`);
-      callback(errorMsg);
-    }
-  }
-  
-  // 开始首次下载尝试
-  attemptDownload();
+
+      writer.on('error', err => {
+        fs.unlink(filePath, () => { });
+        const errorMessage = `Download ${fileName} failed: ${err.message}`;
+        console.error(errorMessage);
+        callback(errorMessage);
+      });
+    })
+    .catch(err => {
+      const errorMessage = `Download ${fileName} failed: ${err.message}`;
+      console.error(errorMessage);
+      callback(errorMessage);
+    });
 }
 
 async function downloadFilesAndRun() {
